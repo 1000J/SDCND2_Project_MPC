@@ -98,8 +98,47 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
+
+          double delta = j[1]["steering_angle"];
+          double acceleration = j[1]["throttle"];
+
+          // statafter latency
+
+          double time_latency = 0.1;
+          double px_next = px + (v * cos(psi) * time_latency);
+          double py_next = py + (v * sin(psi) * time_latency);
+          double psi_next = psi - ((v * delta * time_latency)/2.67);
+          double v_next = v + (acceleration * time_latency);
+
+          double xdiff = 0;
+          double ydiff = 0;
+          Eigen::VectorXd ptsx_vehicle(ptsx.size());
+          ptsx_vehicle.fill(0.0);
+          Eigen::VectorXd ptsy_vehicle(ptsy.size());
+          ptsy_vehicle.fill(0.0);
+          for (unsigned int i=0; i<ptsx.size(); i++) {
+            xdiff = ptsx[i] - px_next;
+            ydiff = ptsy[i] - py_next;
+
+            ptsx_vehicle[i] = xdiff * cos(-psi_next) - ydiff * sin(-psi_next);
+            ptsy_vehicle[i] = xdiff * sin(-psi_next) + ydiff * cos(-psi_next);
+          }
+
+          auto coeffs = polyfit(ptsx_vehicle, ptsy_vehicle, 3);
+
+          double cte = polyeval(coeffs, 0);
+          double epsi = -atan(coeffs[1]);
+
+          Eigen::VectorXd state(6);
+          state << 0,0,0, v_next, cte, epsi;
+
+          std::vector<double> solution;
           double steer_value;
           double throttle_value;
+
+          solution = mpc.Solve(state, coeffs);
+          steer_value = -1.0 * solution[0]/deg2rad(25);
+          throttle_value = solution[1];
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -114,6 +153,15 @@ int main() {
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
 
+          for (unsigned int i=2; i<solution.size(); i++) {
+            if (i%2 == 0) {
+              mpc_x_vals.push_back(solution[i]);
+            } else {
+              mpc_y_vals.push_back(solution[i]);
+            }
+
+          }
+
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
 
@@ -123,6 +171,14 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
+
+          std::cout<<"Before x_vals push_back"<<endl;
+
+
+          for (unsigned int i=0;i<ptsx_vehicle.size();i++) {
+            next_x_vals.push_back(ptsx_vehicle[i]);
+            next_y_vals.push_back(ptsy_vehicle[i]);
+          }
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
